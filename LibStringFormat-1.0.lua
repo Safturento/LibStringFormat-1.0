@@ -1,10 +1,10 @@
 --[=[
 
-	Name: LibStringFormat-3.0
+	Name: LibStringFormat-1.0
 	Revision: $Revision: 1 $
 	Author: Safturento
 	Website: www.safturento.com
-	Description: Adds a variety of functions used to easily format strings and numbers 
+	Description: Adds a variety of functions used to easily format strings and numbers
 	Dependencies: LibStub
 	License: LGPL v2.1
 
@@ -14,7 +14,7 @@
 		<stringOrNumber> (string or number) - the value that you want to sanitize
 		<min> [optional] (number) - the minimum that the number can be
 		<max> [optional] (number) - the maximum that the number can be
- 
+
 	Trim(string): removes extra whitespace from a string
 		<string> (string) - the string you wish to trim
 
@@ -91,7 +91,7 @@ end
 
 function lib:ToClock(sec)
 	local hour, minute = 3600, 60
-	if sec > hour then 
+	if sec > hour then
 		return format('%02.f:%02.f', floor(sec/hour), ceil(sec%hour)/minute)
 	else
 		return format('%02.f:%02.f', floor(sec/minute), floor(sec%minute))
@@ -112,19 +112,26 @@ function lib:ToTime(sec)
 	return format("%.1f", sec)
 end
 
-function lib:ShortFormat(value, decimals)
+function lib:ShortFormat(value, decimals, decimal_threshold)
+	if type(value) == 'string' then value = tonumber(value) end
+
 	local suffix = 'KMBTQ' --I doubt you'd need more than quadrillions..
 	local factor = floor((strlen(value)-1) / 3)
 	local converted = value/math.pow(1000,factor)
-	return format('%.0'..(decimals or 0)..'f%s', converted, strsub(suffix, factor, factor))
+	if decimals and (not decimal_threshold or value > decimal_threshold) then
+		return format('%.0'..(decimals)..'f%s', converted, strsub(suffix, factor, factor))
+	else
+		return converted..strsub(suffix, factor, factor)
+	end
 end
 
 function lib:FileSizeFormat(bytes, decimals)
     local suffix = 'kMGTPEZY'
-    local factor = floor((strlen(bytes)-1) / 3)
-    local converted = bytes/math.pow(1024,factor)
+	 local factor = floor((strlen(floor(bytes))-1) / 3)
+	 local converted = bytes/math.pow(1024,factor)
     return format('%.0'..(decimals or 0)..'f%sB', converted, strsub(suffix, factor, factor))
 end
+
 function lib:GoldFormat(money, round)
 	local negative = money<0 and true or false --if money is negative, add a negative sign when returning the string
 	money = (abs(money)) --remove the negative sign from the actual value
@@ -138,18 +145,18 @@ function lib:GoldFormat(money, round)
 
 	if round then
 		if gold > 0 then
-			return GOLD_COLOR.gold..self:CommaFormat(gold)..'G|r'
+			return GOLD_COLOR.gold..self:CommaFormat(gold)..'|r'
 		elseif silver > 0 then
-			return GOLD_COLOR.silver..silver..'S|r'
+			return GOLD_COLOR.silver..silver..'|r'
 		elseif copper > 0 then
-			return GOLD_COLOR.copper..copper..'C|r'
+			return GOLD_COLOR.copper..copper..'|r'
 		end
 	else
-		gold   = gold   > 0 and GOLD_COLOR.gold..self:CommaFormat(gold)..'G|r ' or ''
-		silver = silver > 0 and GOLD_COLOR.silver..silver..'S|r ' or ''
-		copper = copper > 0 and GOLD_COLOR.copper..copper..'C|r' or ''
+		gold   = gold   > 0 and GOLD_COLOR.gold..self:CommaFormat(gold)..'|r ' or ''
+		silver = silver > 0 and GOLD_COLOR.silver..silver..'|r ' or ''
+		copper = copper > 0 and GOLD_COLOR.copper..copper..'|r' or ''
 
-		return gold..silver..copper
+		return string.trim(gold..silver..copper)
 	end
 end
 
@@ -160,8 +167,10 @@ end
 function lib:Trim(string)
 	return string:find('^%s*$') and '' or string:match('^%s*(.*%S)')
 end
+
 function lib:CommaFormat(value)
-	while true do  
+	local k
+	while true do
 		value, k = string.gsub(value, "^(-?%d+)(%d%d%d)", '%1,%2')
 		if (k==0) then break end
 	end
@@ -191,11 +200,11 @@ function lib:ToRGB(hexString, divide)
 			bHex = bHex .. bHex
 		end
 	end
-	
+
 	assert(rHex and gHex and bHex, MAJOR..'Invalid hexString parameter passed for ToRGB function.')
 
 	local r, g, b = tonumber(rHex, 16), tonumber(gHex, 16), tonumber(bHex, 16)
-	if divide then r = r/255; g=g/255; b=b/255 end
+	if divide then r=r/255; g=g/255; b=b/255 end
 	return r, g, b
 end
 
@@ -205,4 +214,51 @@ function lib:ColorString(string, ...)
 	local hex = #{...} == 1 and ... or self:ToHex(...)
 
 	return format('|cff%s%s|r', hex, string)
+end
+
+----------------------------
+-- UTF-8 AWARE FUNCTIONS ---
+----------------------------
+
+function lib:UTF8gsub(s, i, j)
+	i = strfind(s, i, 1, true)
+
+	if not i then return '' end
+
+	if j then
+		local tmp = strfind(s, j, 1, true)
+		if not tmp then return '' end
+		j = (tmp - 1) + #j
+	end
+
+	return gsub(s, i, j)
+end
+
+function lib:UTF8strsub(string, numChars, dots)
+	local bytes = string:len()
+	if (bytes <= numChars) then
+		return string
+	else
+		local len, pos = 0, 1
+		while(pos <= bytes) do
+			len = len + 1
+			local c = string:byte(pos)
+			if (c > 0 and c <= 127) then
+				pos = pos + 1
+			elseif (c >= 192 and c <= 223) then
+				pos = pos + 2
+			elseif (c >= 224 and c <= 239) then
+				pos = pos + 3
+			elseif (c >= 240 and c <= 247) then
+				pos = pos + 4
+			end
+			if (len == numChars) then break end
+		end
+
+		if (len == numChars and pos <= bytes) then
+			return string:sub(1, pos - 1)..(dots and '...' or '')
+		else
+			return string
+		end
+	end
 end
